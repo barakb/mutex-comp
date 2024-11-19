@@ -3,19 +3,15 @@ use parking_lot::{Mutex as ParkingLotMutex, RwLock as ParkingLotRwLock};
 use std::sync::Arc;
 use std::thread;
 
-use mutex_comp::my_mutex::MyMutex;
-use mutex_comp::my_rw_lock::MyRWLock;
-use mutex_comp::atomics_rw_lock::RwLock as AtomicsRWLock;
 use mutex_comp::c_mutex::CMutex;
 use mutex_comp::c_rw_lock::CRWLock;
+use mutex_comp::my_mutex::MyMutex;
+use mutex_comp::my_rw_lock::MyRWLock;
 use std::sync::{Mutex as StdMutex, RwLock as StdRwLock};
 use std::time::Duration;
 
 fn bench_mutex(c: &mut Criterion) {
-    // let plot_config = PlotConfiguration::default()
-    //     .summary_scale(AxisScale::Logarithmic);
     let mut group = c.benchmark_group("Mutex");
-    // group.plot_config(plot_config);
     for i in 0..3 {
         group.bench_with_input(BenchmarkId::new("MyMutex", i), &i, |b, _| {
             b.iter(|| {
@@ -102,10 +98,7 @@ fn bench_mutex(c: &mut Criterion) {
 }
 
 fn bench_rwlock(c: &mut Criterion) {
-    // let plot_config = PlotConfiguration::default()
-    //     .summary_scale(AxisScale::Logarithmic);
     let mut group = c.benchmark_group("RwLock");
-    // group.plot_config(plot_config);
 
     for i in 0..3 {
         group.bench_with_input(BenchmarkId::new("CRWLock", i), &i, |b, _| {
@@ -139,39 +132,37 @@ fn bench_rwlock(c: &mut Criterion) {
                 }
             })
         });
-        // group.bench_with_input(BenchmarkId::new("AtomicsRWLock", i), &i, |b, _| {
-        //     b.iter(|| {
-        //         let rwlock = Arc::new(AtomicsRWLock::new(()));
-        //         let mut handles = vec![];
-        //         for _ in 0..8 {
-        //             let rwlock = Arc::clone(&rwlock);
-        //             let handle = thread::spawn(move || {
-        //                 for _ in 0..1000 {
-        //                     let guard = rwlock.read();
-        //                     criterion::black_box(&rwlock);
-        //                     drop(guard);
-        //                 }
-        //             });
-        //             handles.push(handle);
-        //         }
-        //         for _ in 0..2 {
-        //             let rwlock = Arc::clone(&rwlock);
-        //             let handle = thread::spawn(move || {
-        //                 for _ in 0..100 {
-        //                     let guard = rwlock.write();
-        //                     criterion::black_box(&rwlock);
-        //                     drop(guard)
-        //
-        //                 }
-        //             });
-        //             handles.push(handle);
-        //         }
-        //         for handle in handles {
-        //             handle.join().unwrap();
-        //         }
-        //         drop(rwlock);
-        //     })
-        // });
+        group.bench_with_input(BenchmarkId::new("CRWLock reads only", i), &i, |b, _| {
+            b.iter(|| {
+                let rwlock = Arc::new(CRWLock::new());
+                let mut handles = vec![];
+                for _ in 0..8 {
+                    let rwlock = Arc::clone(&rwlock);
+                    let handle = thread::spawn(move || {
+                        for _ in 0..1000 {
+                            rwlock.acquire_read();
+                            criterion::black_box(&rwlock);
+                            rwlock.release();
+                        }
+                    });
+                    handles.push(handle);
+                }
+                for _ in 0..2 {
+                    let rwlock = Arc::clone(&rwlock);
+                    let handle = thread::spawn(move || {
+                        for _ in 0..100 {
+                            rwlock.acquire_read();
+                            criterion::black_box(&rwlock);
+                            rwlock.release();
+                        }
+                    });
+                    handles.push(handle);
+                }
+                for handle in handles {
+                    handle.join().unwrap();
+                }
+            })
+        });
         group.bench_with_input(BenchmarkId::new("MyRWLock", i), &i, |b, _| {
             b.iter(|| {
                 let rwlock = Arc::new(MyRWLock::new());
@@ -192,6 +183,37 @@ fn bench_rwlock(c: &mut Criterion) {
                     let handle = thread::spawn(move || {
                         for _ in 0..100 {
                             rwlock.acquire_write();
+                            criterion::black_box(&rwlock);
+                            rwlock.release();
+                        }
+                    });
+                    handles.push(handle);
+                }
+                for handle in handles {
+                    handle.join().unwrap();
+                }
+            })
+        });
+        group.bench_with_input(BenchmarkId::new("MyRWLock reads only", i), &i, |b, _| {
+            b.iter(|| {
+                let rwlock = Arc::new(MyRWLock::new());
+                let mut handles = vec![];
+                for _ in 0..8 {
+                    let rwlock = Arc::clone(&rwlock);
+                    let handle = thread::spawn(move || {
+                        for _ in 0..1000 {
+                            rwlock.acquire_read();
+                            criterion::black_box(&rwlock);
+                            rwlock.release();
+                        }
+                    });
+                    handles.push(handle);
+                }
+                for _ in 0..2 {
+                    let rwlock = Arc::clone(&rwlock);
+                    let handle = thread::spawn(move || {
+                        for _ in 0..100 {
+                            rwlock.acquire_read();
                             criterion::black_box(&rwlock);
                             rwlock.release();
                         }
@@ -270,7 +292,7 @@ fn bench_rwlock(c: &mut Criterion) {
 fn custom_criterion_main() {
     let mut criterion = Criterion::default()
         .sample_size(100)
-        .measurement_time(Duration::from_secs(6));
+        .measurement_time(Duration::from_secs(30));
 
     bench_mutex(&mut criterion);
     bench_rwlock(&mut criterion);
